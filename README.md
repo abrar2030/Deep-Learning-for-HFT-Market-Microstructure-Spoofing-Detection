@@ -1,8 +1,8 @@
 # Deep Learning for HFT Market Microstructure Spoofing Detection
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18667008.svg)](https://doi.org/10.5281/zenodo.18667008)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](requirements.txt)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](requirements.txt)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](code/requirements.txt)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](code/requirements.txt)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](Dockerfile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -89,7 +89,7 @@ The model consumes Level 3 LOB data transformed into a **47-dimensional feature 
 | **Total Input**         | Final TEN feature vector                       | **47**                     |
 | Sequence Length         | LOB event look-back window                     | Default: **100 events**    |
 
-**Data adapters** for FIX Protocol, NASDAQ ITCH, and OUCH are available in `data_adapters/market_data_adapters.py`.
+**Data adapters** for FIX Protocol, NASDAQ ITCH, and OUCH are available in `code/data_adapters/market_data_adapters.py`.
 
 **Synthetic data generation** for training and reproducibility is available via `code/utils/data_generation.py`, producing realistic labeled spoofing patterns using the Adversarial Backtest Framework.
 
@@ -97,7 +97,7 @@ The model consumes Level 3 LOB data transformed into a **47-dimensional feature 
 
 ## Configuration
 
-All parameters are managed via `configs/config.json`.
+All parameters are managed via `code/configs/config.json`.
 
 | Section      | Key Parameters                                  | Defaults    |
 | :----------- | :---------------------------------------------- | :---------- |

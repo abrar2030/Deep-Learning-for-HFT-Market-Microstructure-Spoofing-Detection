@@ -12,19 +12,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-# Add project root to path
+# stdlib done — now resolve local packages before third-party imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from code.deployment.inference import RealTimeDetector
-from code.models.transformer_encoder import TransformerEncoderNetwork
-
+# Third-party imports
 import redis
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
+
+# Local imports
+from code.deployment.inference import RealTimeDetector
+from code.models.transformer_encoder import TransformerEncoderNetwork
 
 # Configure logging
 logging.basicConfig(
@@ -127,7 +129,7 @@ async def lifespan(app: FastAPI):
     model_path = os.getenv(
         "MODEL_PATH", "/app/pretrained_models/ten_model_synthetic.pth"
     )
-    config_path = os.getenv("CONFIG_PATH", "/app/configs/config.json")
+    config_path = os.getenv("CONFIG_PATH", "/app/code/configs/config.json")
     device = state.device
 
     logger.info(f"Device: {device}")
@@ -135,11 +137,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"Config path: {config_path}")
 
     try:
-        # Load config
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        # Create model
         model = TransformerEncoderNetwork(
             input_dim=config["model"]["input_dim"],
             d_model=config["model"]["d_model"],
@@ -151,7 +151,6 @@ async def lifespan(app: FastAPI):
             num_classes=2,
         )
 
-        # Initialize detector
         state.detector = RealTimeDetector(
             model=model,
             model_path=model_path,
@@ -166,14 +165,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load model: {e}")
         raise
 
-    # Connect to Redis
+    # Connect to Redis — port is also configurable via env
     try:
         redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
         state.redis_client = redis.Redis(
-            host=redis_host, port=6379, db=0, decode_responses=True
+            host=redis_host, port=redis_port, db=0, decode_responses=True
         )
         state.redis_client.ping()
-        logger.info(f"Connected to Redis at {redis_host}")
+        logger.info(f"Connected to Redis at {redis_host}:{redis_port}")
     except Exception as e:
         logger.warning(f"Redis connection failed: {e}")
         state.redis_client = None
@@ -261,11 +261,8 @@ async def predict_single(event: LOBEvent):
     try:
         event_dict = event.model_dump()
 
-        # Process event
-        alert = state.detector.process_event(event_dict)
-
-        # Get prediction (even if no alert)
-        prediction, confidence, inference_time = state.detector.predict()
+        # process_event runs inference internally; unpack to avoid a second pass
+        alert, prediction, confidence, inference_time = state.detector.process_event(event_dict)
 
         inference_latency = time.time() - start_time
         INFERENCE_LATENCY.observe(inference_latency)
@@ -273,7 +270,6 @@ async def predict_single(event: LOBEvent):
         if alert:
             SPOOFING_DETECTED.inc()
 
-            # Cache alert in Redis
             if state.redis_client:
                 try:
                     alert_key = f"alert:{event.asset}:{int(event.timestamp)}"
@@ -314,8 +310,7 @@ async def predict_batch(request: BatchInferenceRequest):
 
     for event in request.events:
         event_dict = event.model_dump()
-        alert = state.detector.process_event(event_dict)
-        prediction, confidence, inference_time = state.detector.predict()
+        alert, prediction, confidence, inference_time = state.detector.process_event(event_dict)
 
         INFERENCE_COUNTER.inc()
 
@@ -387,17 +382,14 @@ async def get_recent_alerts(limit: int = 100):
         raise HTTPException(status_code=503, detail="Redis not connected")
 
     try:
-        # Get all alert keys
         keys = state.redis_client.keys("alert:*")
 
-        # Get alert data
         alerts = []
         for key in keys[:limit]:
             alert_data = state.redis_client.get(key)
             if alert_data:
                 alerts.append(json.loads(alert_data))
 
-        # Sort by timestamp
         alerts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
 
         return {"status": "success", "count": len(alerts), "alerts": alerts[:limit]}
@@ -421,17 +413,21 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000, help="Port number")
     parser.add_argument("--device", default="cpu", help="Device (cpu/cuda)")
     parser.add_argument(
-        "--reload", action="store_true", help="Auto-reload on code changes"
+        "--reload", action="store_true", help="Auto-reload on code changes (dev only)"
     )
 
     args = parser.parse_args()
 
     os.environ["DEVICE"] = args.device
 
-    uvicorn.run(
-        "server:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        log_level="info",
-    )
+    if args.reload:
+        # String form needed for --reload to work; only use in development
+        uvicorn.run(
+            "infrastructure.api.server:app",
+            host=args.host,
+            port=args.port,
+            reload=True,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")

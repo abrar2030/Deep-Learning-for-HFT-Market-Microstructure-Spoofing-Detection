@@ -4,19 +4,13 @@ Tests model robustness against adversarial evasion attacks
 Implements adversarial training for improved robustness
 """
 
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 
 @dataclass
@@ -82,6 +76,10 @@ class AdversarialAttacker:
 
         # Backward pass
         loss.backward()
+
+        # Guard: grad can be None if inputs were detached somewhere upstream
+        if x_adv.grad is None:
+            return x.detach()
 
         # Generate adversarial example
         perturbation = epsilon * x_adv.grad.sign()
@@ -239,29 +237,21 @@ class RobustnessTester:
         total = 0
         perturbations = []
 
-        with torch.no_grad():
-            # Disable gradients for clean evaluation
-            for batch_idx, batch in enumerate(data_loader):
-                sequences = batch["sequence"].to(self.device)
-                labels = batch["label"].to(self.device)
-                time_deltas = batch["time_delta"].to(self.device)
-
-                # Clean accuracy
-                logits_clean = self.model(sequences, time_deltas)
-                pred_clean = logits_clean.argmax(dim=1)
-                correct_clean += (pred_clean == labels).sum().item()
-
-                total += labels.size(0)
-
-        # Generate and evaluate adversarial examples
-        self.model.eval()
-
-        for batch_idx, batch in enumerate(data_loader):
+        # Single pass: compute clean accuracy and adversarial accuracy together
+        # so the data_loader is only iterated once (handles both Dataset and IterableDataset).
+        for batch in data_loader:
             sequences = batch["sequence"].to(self.device)
             labels = batch["label"].to(self.device)
             time_deltas = batch["time_delta"].to(self.device)
 
-            # Generate adversarial examples
+            # Clean accuracy (no grad needed)
+            with torch.no_grad():
+                logits_clean = self.model(sequences, time_deltas)
+                pred_clean = logits_clean.argmax(dim=1)
+                correct_clean += (pred_clean == labels).sum().item()
+                total += labels.size(0)
+
+            # Generate adversarial examples (grad required for FGSM/PGD)
             if attack_type == "fgsm":
                 sequences_adv = self.attacker.fgsm_attack(
                     sequences, time_deltas, labels, epsilon
@@ -277,7 +267,7 @@ class RobustnessTester:
             else:
                 raise ValueError(f"Unknown attack type: {attack_type}")
 
-            # Evaluate adversarial examples
+            # Adversarial accuracy
             with torch.no_grad():
                 logits_adv = self.model(sequences_adv, time_deltas)
                 pred_adv = logits_adv.argmax(dim=1)

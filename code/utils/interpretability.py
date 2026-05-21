@@ -57,6 +57,12 @@ class IntegratedGradients:
         self.model.zero_grad()
         target_output.backward(torch.ones_like(target_output))
 
+        if inputs.grad is None:
+            raise RuntimeError(
+                "Gradient did not flow back to inputs. "
+                "Ensure the model is differentiable w.r.t. its inputs."
+            )
+
         gradients = inputs.grad.clone()
         inputs.grad.zero_()
 

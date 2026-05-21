@@ -56,8 +56,9 @@ class LOBStreamingConsumer:
 
         # Connect to Redis
         try:
+            redis_port = int(os.getenv("REDIS_PORT", "6379"))
             self.redis_client = redis.Redis(
-                host=redis_host, port=6379, db=0, decode_responses=True
+                host=redis_host, port=redis_port, db=0, decode_responses=True
             )
             self.redis_client.ping()
             logger.info(f"✓ Connected to Redis at {redis_host}")
@@ -254,7 +255,7 @@ def main():
             if response.status_code == 200:
                 logger.info("✓ API is ready")
                 break
-        except:
+        except Exception:
             pass
         time.sleep(2)
     else:

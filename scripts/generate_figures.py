@@ -1,3 +1,15 @@
+"""
+Generate all paper figures.
+
+Run from the project root:
+    python scripts/generate_figures.py [--output-dir <dir>]
+
+Figures are saved to <output-dir> (default: docs/figures/).
+"""
+
+import argparse
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -21,12 +33,19 @@ plt.rcParams.update(
 )
 
 
-def generate_fig1_architecture():
+def _save(output_dir: Path, filename: str):
+    """Save current figure to output_dir/filename and close it."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_dir / filename)
+    plt.close()
+    print(f"  Saved {filename}")
+
+
+def generate_fig1_architecture(output_dir: Path):
     # Figure 1: TEN Architecture Diagram (Conceptual representation)
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.axis("off")
 
-    # Draw boxes for layers
     layers = [
         "LOB Input\n(Level 3 Data)",
         "Feature Engineering\n(Microstructure)",
@@ -54,17 +73,15 @@ def generate_fig1_architecture():
             )
 
     plt.title("Figure 1: Transformer-Encoder Network (TEN) Architecture", pad=20)
-    plt.savefig("fig1_architecture.png")
-    plt.close()
+    _save(output_dir, "fig1_architecture.png")
 
 
-def generate_fig2_lob_patterns():
+def generate_fig2_lob_patterns(output_dir: Path):
     # Figure 2: LOB Dynamics & Spoofing Patterns
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Layering
     prices = np.arange(100, 110)
-    volumes = [10, 15, 12, 8, 5, 50, 45, 40, 35, 30]  # Large volumes at ask side
+    volumes = [10, 15, 12, 8, 5, 50, 45, 40, 35, 30]
     colors = ["green"] * 5 + ["red"] * 5
     ax1.barh(prices, volumes, color=colors, alpha=0.7)
     ax1.set_title("Layering Strategy (Sell-side Pressure)")
@@ -73,7 +90,6 @@ def generate_fig2_lob_patterns():
     ax1.axhline(104.5, color="black", linestyle="--", label="Mid-price")
     ax1.legend()
 
-    # Flipping
     time = np.linspace(0, 10, 100)
     bid_vol = np.where(time < 5, 100, 10)
     ask_vol = np.where(time < 5, 10, 100)
@@ -87,17 +103,15 @@ def generate_fig2_lob_patterns():
 
     plt.suptitle("Figure 2: Limit Order Book (LOB) Spoofing Patterns")
     plt.tight_layout()
-    plt.savefig("fig2_lob_patterns.png")
-    plt.close()
+    _save(output_dir, "fig2_lob_patterns.png")
 
 
-def generate_fig3_hawkes_causality():
+def generate_fig3_hawkes_causality(output_dir: Path):
     # Figure 3: Hawkes Process-based Directional Causality
     G = nx.DiGraph()
     assets = ["SPY", "ES", "QQQ", "NQ", "VIX"]
     G.add_nodes_from(assets)
 
-    # Define causal relationships (branching ratios)
     edges = [
         ("SPY", "ES", 0.85),
         ("ES", "SPY", 0.42),
@@ -126,11 +140,10 @@ def generate_fig3_hawkes_causality():
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
     plt.title("Figure 3: Hawkes Process-based Directional Causality (Branching Ratios)")
-    plt.savefig("fig3_hawkes_causality.png")
-    plt.close()
+    _save(output_dir, "fig3_hawkes_causality.png")
 
 
-def generate_fig4_benchmarks():
+def generate_fig4_benchmarks(output_dir: Path):
     # Figure 4: Comparative Performance (F1-Score vs. Latency)
     data = {
         "Model": [
@@ -159,11 +172,10 @@ def generate_fig4_benchmarks():
     plt.xlabel("Latency (μs)")
     plt.ylabel("F1-Score")
     plt.grid(True, linestyle="--", alpha=0.6)
-    plt.savefig("fig4_benchmarks.png")
-    plt.close()
+    _save(output_dir, "fig4_benchmarks.png")
 
 
-def generate_fig5_ablation():
+def generate_fig5_ablation(output_dir: Path):
     # Figure 5: Ablation Study Impact
     configs = [
         "Full TEN-GNN",
@@ -192,11 +204,10 @@ def generate_fig5_ablation():
         )
 
     plt.xticks(rotation=15)
-    plt.savefig("fig5_ablation.png")
-    plt.close()
+    _save(output_dir, "fig5_ablation.png")
 
 
-def generate_fig6_explainability():
+def generate_fig6_explainability(output_dir: Path):
     # Figure 6: Model Explainability (SHAP Values)
     features = [
         "Order Imbalance",
@@ -216,26 +227,26 @@ def generate_fig6_explainability():
     plt.barh(df["Feature"], df["SHAP Value"], color="teal")
     plt.xlabel("Mean |SHAP Value| (Feature Importance)")
     plt.title("Figure 6: Model Explainability via SHAP Values")
-    plt.savefig("fig6_explainability.png")
-    plt.close()
+    _save(output_dir, "fig6_explainability.png")
 
 
-def generate_fig7_flash_crash():
+def generate_fig7_flash_crash(output_dir: Path):
     # Figure 7: Real-World Validation (2010 Flash Crash)
-    time = np.linspace(14.5, 15.0, 500)  # Hours
+    rng = np.random.default_rng(0)
+    time = np.linspace(14.5, 15.0, 500)
     price = (
-        1160 - 50 * np.exp(-((time - 14.75) ** 2) / 0.001) + np.random.normal(0, 2, 500)
+        1160
+        - 50 * np.exp(-((time - 14.75) ** 2) / 0.001)
+        + rng.normal(0, 2, 500)
     )
-    detection_prob = 1 / (1 + np.exp(-20 * (0.8 - np.abs(time - 14.75))))
     detection_prob = np.where(
         np.abs(time - 14.75) < 0.05,
-        0.95 + np.random.normal(0, 0.02, 500),
-        0.05 + np.random.normal(0, 0.02, 500),
+        0.95 + rng.normal(0, 0.02, 500),
+        0.05 + rng.normal(0, 0.02, 500),
     )
     detection_prob = np.clip(detection_prob, 0, 1)
 
     fig, ax1 = plt.subplots(figsize=(12, 6))
-
     ax1.plot(time, price, color="black", label="E-mini S&P 500 Price")
     ax1.set_xlabel("Time (EST)")
     ax1.set_ylabel("Price", color="black")
@@ -249,15 +260,15 @@ def generate_fig7_flash_crash():
 
     plt.title("Figure 7: Real-World Validation (2010 Flash Crash - Sarao Case)")
     fig.legend(loc="upper right", bbox_to_anchor=(1, 1), bbox_transform=ax1.transAxes)
-    plt.savefig("fig7_flash_crash.png")
-    plt.close()
+    _save(output_dir, "fig7_flash_crash.png")
 
 
-def generate_fig8_convergence():
+def generate_fig8_convergence(output_dir: Path):
     # Figure 8: Training Convergence & Loss Curves
+    rng = np.random.default_rng(1)
     epochs = np.arange(1, 51)
-    train_loss = 0.5 * np.exp(-epochs / 10) + 0.05 + np.random.normal(0, 0.005, 50)
-    val_loss = 0.55 * np.exp(-epochs / 12) + 0.07 + np.random.normal(0, 0.005, 50)
+    train_loss = 0.5 * np.exp(-epochs / 10) + 0.05 + rng.normal(0, 0.005, 50)
+    val_loss = 0.55 * np.exp(-epochs / 12) + 0.07 + rng.normal(0, 0.005, 50)
 
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_loss, label="Training Loss", lw=2)
@@ -267,17 +278,32 @@ def generate_fig8_convergence():
     plt.title("Figure 8: Training Convergence (Decoupled Optimization)")
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.savefig("fig8_convergence.png")
-    plt.close()
+    _save(output_dir, "fig8_convergence.png")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate all paper figures.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(__file__).parent.parent / "docs" / "figures",
+        help="Directory to save figures (default: docs/figures/)",
+    )
+    args = parser.parse_args()
+
+    print(f"Saving figures to: {args.output_dir.resolve()}")
+
+    generate_fig1_architecture(args.output_dir)
+    generate_fig2_lob_patterns(args.output_dir)
+    generate_fig3_hawkes_causality(args.output_dir)
+    generate_fig4_benchmarks(args.output_dir)
+    generate_fig5_ablation(args.output_dir)
+    generate_fig6_explainability(args.output_dir)
+    generate_fig7_flash_crash(args.output_dir)
+    generate_fig8_convergence(args.output_dir)
+
+    print("\nAll 8 figures generated successfully.")
 
 
 if __name__ == "__main__":
-    generate_fig1_architecture()
-    generate_fig2_lob_patterns()
-    generate_fig3_hawkes_causality()
-    generate_fig4_benchmarks()
-    generate_fig5_ablation()
-    generate_fig6_explainability()
-    generate_fig7_flash_crash()
-    generate_fig8_convergence()
-    print("All 8 figures generated successfully.")
+    main()

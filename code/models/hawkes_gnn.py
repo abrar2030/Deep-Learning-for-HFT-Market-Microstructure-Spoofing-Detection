@@ -230,6 +230,8 @@ class HawkesGNN(nn.Module):
     ):
         super(HawkesGNN, self).__init__()
 
+        if num_gnn_layers < 1:
+            raise ValueError(f"num_gnn_layers must be >= 1, got {num_gnn_layers}")
         self.num_gnn_layers = num_gnn_layers
 
         # Graph attention layers

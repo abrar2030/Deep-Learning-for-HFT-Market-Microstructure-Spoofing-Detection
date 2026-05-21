@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 class LOBFeatureExtractor:

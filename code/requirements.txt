@@ -26,8 +26,8 @@ tqdm>=4.65.0
 pytest>=7.4.0
 pytest-cov>=4.1.0
 
-# Data Processing
-python-docx>=0.8.11
+# System Monitoring (used in benchmarks)
+psutil>=5.9.0
 
 # Utilities
 PyYAML>=6.0

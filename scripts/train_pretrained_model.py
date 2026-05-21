@@ -1,24 +1,26 @@
 """
 Script to train and save pre-trained model on synthetic data
 Generates model checkpoint ready for deployment
+
+Run from the project root:
+    python scripts/train_pretrained_model.py
 """
 
 import sys
 from pathlib import Path
 
 import numpy as np
-import torch
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-from code.models.transformer_encoder import TransformerEncoderNetwork
-from code.utils.data_generation import AdversarialBacktestFramework
-from code.utils.training import LOBDataset, Trainer
-
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader, random_split
+
+# Add code root so bare `from models.` / `from utils.` resolve correctly
+code_root = Path(__file__).parent.parent / "code"
+sys.path.insert(0, str(code_root))
+
+from models.transformer_encoder import TransformerEncoderNetwork
+from utils.data_generation import AdversarialBacktestFramework
+from utils.training import LOBDataset, Trainer
 
 
 def main():
@@ -48,7 +50,6 @@ def main():
     print("Generating Synthetic Data")
     print("=" * 70)
 
-    # Create baseline LOB data
     n_points = NUM_SAMPLES * 2
     lob_data = pd.DataFrame(
         {
@@ -61,7 +62,6 @@ def main():
     )
     lob_data["mid_price"] = (lob_data["best_bid"] + lob_data["best_ask"]) / 2
 
-    # Generate labeled dataset
     framework = AdversarialBacktestFramework(seed=SEED)
     sequences, labels, metadata = framework.generate_labeled_dataset(
         lob_data, num_samples=NUM_SAMPLES, spoofing_ratio=0.3, window_size=100
@@ -90,9 +90,9 @@ def main():
 
     print(f"✓ Generated {len(sequences_array)} samples")
     print(f"  Spoofing: {np.sum(labels_array == 1)}")
-    print(f"  Clean: {np.sum(labels_array == 0)}")
+    print(f"  Clean:    {np.sum(labels_array == 0)}")
 
-    # Create datasets
+    # Create datasets and loaders
     dataset = LOBDataset(sequences_array, labels_array, time_deltas_array)
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -120,15 +120,15 @@ def main():
         num_classes=2,
     )
 
-    print(
-        f"✓ Model created with {sum(p.numel() for p in model.parameters()):,} parameters"
-    )
+    print(f"✓ Model created with {sum(p.numel() for p in model.parameters()):,} parameters")
 
     # Train
     print("\n" + "=" * 70)
     print("Training")
     print("=" * 70)
 
+    # Output dir relative to project root (one level above scripts/)
+    project_root = Path(__file__).parent.parent
     checkpoint_dir = project_root / "pretrained_models"
     checkpoint_dir.mkdir(exist_ok=True)
 

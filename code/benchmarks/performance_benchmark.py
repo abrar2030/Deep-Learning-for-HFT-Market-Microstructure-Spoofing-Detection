@@ -19,7 +19,7 @@ import torch.nn as nn
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from code.models.transformer_encoder import TransformerEncoderNetwork
+from models.transformer_encoder import TransformerEncoderNetwork
 
 
 @dataclass

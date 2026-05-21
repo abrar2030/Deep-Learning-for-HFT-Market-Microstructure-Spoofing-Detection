@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   # ============================================
-  # Zookeeper (for Kafka)
+  # Zookeeper (required by Kafka)
   # ============================================
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -27,7 +27,8 @@ services:
     image: confluentinc/cp-kafka:7.5.0
     container_name: ten-gnn-kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
       - "9093:9093"
@@ -86,7 +87,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./deployment/monitoring/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # init.sql is relative to the docker-compose.yml file (project root)
+      - ./infrastructure/monitoring/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - ten-gnn-network
     healthcheck:
@@ -110,8 +112,9 @@ services:
     environment:
       - DEVICE=cpu
       - MODEL_PATH=/app/pretrained_models/ten_model_synthetic.pth
-      - CONFIG_PATH=/app/configs/config.json
+      - CONFIG_PATH=/app/code/configs/config.json
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=spoofing_detection
@@ -137,6 +140,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
     profiles:
       - cpu
 
@@ -155,8 +159,9 @@ services:
     environment:
       - DEVICE=cuda
       - MODEL_PATH=/app/pretrained_models/ten_model_synthetic.pth
-      - CONFIG_PATH=/app/configs/config.json
+      - CONFIG_PATH=/app/code/configs/config.json
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=spoofing_detection
@@ -190,6 +195,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
     profiles:
       - gpu
 
@@ -202,15 +208,17 @@ services:
       dockerfile: Dockerfile
       target: cpu
     container_name: ten-gnn-consumer
-    command: python deployment/streaming/kafka_consumer.py
+    command: python infrastructure/streaming/kafka_consumer.py
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC=lob_events
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - API_URL=http://ten-gnn-cpu:8000
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./alerts:/app/alerts
     depends_on:
       kafka:
         condition: service_healthy
@@ -231,11 +239,13 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
     networks:
       - ten-gnn-network
     profiles:
@@ -251,9 +261,10 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./deployment/monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
     networks:

@@ -50,14 +50,17 @@ class RealTimeDetector:
         self.confidence_threshold = confidence_threshold
         self.alert_cooldown_ms = alert_cooldown_ms
 
-        # Load model
-        checkpoint = torch.load(model_path, map_location=device)
+        # Load model weights_only=False: checkpoint includes optimizer/scheduler state
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.eval()
 
-        # Sliding window buffer
-        self.feature_buffer = deque(maxlen=window_size)
-        self.time_buffer = deque(maxlen=window_size)
+        # Sliding window buffers
+        self.feature_buffer: deque = deque(maxlen=window_size)
+        self.time_buffer: deque = deque(maxlen=window_size)  # stores time deltas
+
+        # FIX: track last absolute timestamp separately for correct delta computation
+        self._last_timestamp: Optional[float] = None
 
         # Alert tracking
         self.last_alert_time = 0
@@ -79,10 +82,8 @@ class RealTimeDetector:
         Returns:
             Feature vector (47,)
         """
-        # Extract features (simplified - in production, use LOBFeatureExtractor)
         features = np.zeros(47)
 
-        # Example: populate with LOB data
         if "bid_prices" in lob_event:
             features[:10] = lob_event["bid_prices"][:10]
         if "ask_prices" in lob_event:
@@ -92,7 +93,6 @@ class RealTimeDetector:
         if "ask_volumes" in lob_event:
             features[30:40] = lob_event["ask_volumes"][:10]
 
-        # Add microstructure features
         if "order_imbalance" in lob_event:
             features[40] = lob_event["order_imbalance"]
         if "spread" in lob_event:
@@ -108,16 +108,17 @@ class RealTimeDetector:
 
         Args:
             features: Feature vector
-            timestamp: Event timestamp
+            timestamp: Event timestamp (absolute, in ms)
         """
         self.feature_buffer.append(features)
 
-        # Compute time delta
-        if len(self.time_buffer) > 0:
-            time_delta = timestamp - self.time_buffer[-1]
+        # FIX: compute delta from last *absolute* timestamp, not last delta
+        if self._last_timestamp is not None:
+            time_delta = timestamp - self._last_timestamp
         else:
             time_delta = 0.0
 
+        self._last_timestamp = timestamp
         self.time_buffer.append(time_delta)
 
     def predict(self) -> Tuple[int, float, float]:
@@ -128,7 +129,7 @@ class RealTimeDetector:
             prediction (0 or 1), confidence, inference_time_ms
         """
         if len(self.feature_buffer) < self.window_size:
-            return 0, 0.0, 0.0  # Not enough data
+            return 0, 0.0, 0.0  # Not enough data yet
 
         # Prepare input
         sequence = np.stack(list(self.feature_buffer))  # (window_size, 47)
@@ -147,41 +148,39 @@ class RealTimeDetector:
             logits = self.model(sequence_tensor, time_tensor)
             probabilities = torch.softmax(logits, dim=1)
 
-        inference_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
+        inference_time = (time.perf_counter() - start_time) * 1000  # ms
 
-        # Get prediction
         prediction = logits.argmax(dim=1).item()
         confidence = probabilities[0, prediction].item()
 
-        # Track inference time
         self.inference_times.append(inference_time)
 
         return prediction, confidence, inference_time
 
-    def process_event(self, lob_event: Dict) -> Optional[Dict]:
+    def process_event(
+        self, lob_event: Dict
+    ) -> Tuple[Optional[Dict], int, float, float]:
         """
-        Process a single LOB event and generate alert if spoofing detected.
+        Process a single LOB event, run inference, and generate an alert if spoofing
+        is detected above the confidence threshold.
 
         Args:
             lob_event: LOB event with timestamp and features
 
         Returns:
-            Alert dictionary if spoofing detected, None otherwise
+            Tuple of (alert_or_None, prediction, confidence, inference_time_ms).
+            Callers must use these values directly rather than calling predict()
+            again to avoid redundant inference.
         """
         timestamp = lob_event.get("timestamp", time.time() * 1000)
 
-        # Preprocess
         features = self.preprocess_lob_event(lob_event)
-
-        # Update buffer
         self.update_buffer(features, timestamp)
 
-        # Predict
         prediction, confidence, inference_time = self.predict()
 
-        # Check for spoofing
+        alert: Optional[Dict] = None
         if prediction == 1 and confidence >= self.confidence_threshold:
-            # Check cooldown
             if timestamp - self.last_alert_time >= self.alert_cooldown_ms:
                 alert = {
                     "timestamp": timestamp,
@@ -191,13 +190,10 @@ class RealTimeDetector:
                     "asset": lob_event.get("asset", "UNKNOWN"),
                     "mid_price": lob_event.get("mid_price", None),
                 }
-
                 self.last_alert_time = timestamp
                 self.alert_history.append(alert)
 
-                return alert
-
-        return None
+        return alert, prediction, confidence, inference_time
 
     def get_performance_stats(self) -> Dict:
         """
@@ -211,7 +207,7 @@ class RealTimeDetector:
 
         inference_times = np.array(self.inference_times)
 
-        stats = {
+        return {
             "mean_latency_ms": float(np.mean(inference_times)),
             "median_latency_ms": float(np.median(inference_times)),
             "p95_latency_ms": float(np.percentile(inference_times, 95)),
@@ -221,12 +217,11 @@ class RealTimeDetector:
             "num_alerts": len(self.alert_history),
         }
 
-        return stats
-
     def reset_buffers(self):
-        """Reset sliding window buffers."""
+        """Reset sliding window buffers and timestamp tracking."""
         self.feature_buffer.clear()
         self.time_buffer.clear()
+        self._last_timestamp = None
 
 
 def load_model_for_inference(
@@ -243,14 +238,11 @@ def load_model_for_inference(
     Returns:
         Loaded model
     """
-    # Load config
+    from code.models.transformer_encoder import TransformerEncoderNetwork
+
     with open(config_path, "r") as f:
         config = json.load(f)
 
-    # Import model
-    from models.transformer_encoder import TransformerEncoderNetwork
-
-    # Create model
     model = TransformerEncoderNetwork(
         input_dim=config["model"]["input_dim"],
         d_model=config["model"]["d_model"],
@@ -261,8 +253,8 @@ def load_model_for_inference(
         max_seq_len=config["data"]["window_size"],
     )
 
-    # Load weights
-    checkpoint = torch.load(model_path, map_location=device)
+    # weights_only=False: checkpoint may include non-tensor metadata
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
@@ -279,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_path",
         type=str,
-        default="configs/config.json",
+        default="code/configs/config.json",
         help="Path to config file",
     )
     parser.add_argument(
@@ -288,38 +280,32 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Load model
     model = load_model_for_inference(args.model_path, args.config_path, args.device)
 
-    # Create detector
     detector = RealTimeDetector(
         model=model, model_path=args.model_path, device=args.device
     )
 
-    # Simulate streaming events
     print("\nSimulating streaming LOB events...")
 
     for i in range(200):
-        # Generate dummy event
         lob_event = {
             "timestamp": time.time() * 1000 + i * 10,
             "asset": "SPY",
-            "bid_prices": np.random.uniform(100, 101, 10),
-            "ask_prices": np.random.uniform(100.5, 101.5, 10),
-            "bid_volumes": np.random.randint(100, 1000, 10),
-            "ask_volumes": np.random.randint(100, 1000, 10),
+            "bid_prices": np.random.uniform(100, 101, 10).tolist(),
+            "ask_prices": np.random.uniform(100.5, 101.5, 10).tolist(),
+            "bid_volumes": np.random.randint(100, 1000, 10).tolist(),
+            "ask_volumes": np.random.randint(100, 1000, 10).tolist(),
             "mid_price": 100.25 + np.random.randn() * 0.1,
         }
 
-        # Process event
-        alert = detector.process_event(lob_event)
+        alert, _pred, _conf, _lat = detector.process_event(lob_event)
 
         if alert:
             print("\n🚨 ALERT: Spoofing detected!")
             print(f"  Confidence: {alert['confidence']:.4f}")
             print(f"  Inference time: {alert['inference_time_ms']:.3f}ms")
 
-    # Print performance stats
     stats = detector.get_performance_stats()
     print("\n" + "=" * 50)
     print("Performance Statistics")

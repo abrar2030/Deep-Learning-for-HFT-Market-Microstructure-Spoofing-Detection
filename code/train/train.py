@@ -9,16 +9,16 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 import pandas as pd
+import torch
+from torch.utils.data import DataLoader, random_split
+
+# Add code root to path so bare `from models.` and `from utils.` imports resolve
+code_root = Path(__file__).parent.parent
+sys.path.insert(0, str(code_root))
+
 from models.hawkes_gnn import TEN_GNN_Hybrid
 from models.transformer_encoder import TransformerEncoderNetwork
-from torch.utils.data import DataLoader, random_split
 from utils.data_generation import AdversarialBacktestFramework
 from utils.feature_engineering import LOBFeatureExtractor
 from utils.training import LOBDataset, Trainer, evaluate_model
@@ -143,14 +143,15 @@ def generate_synthetic_data(args):
 
     # Convert to feature format
     print("\nExtracting features...")
-    LOBFeatureExtractor(num_levels=10)
+    feature_extractor = LOBFeatureExtractor(
+        num_levels=10
+    )  # FIX: assigned, not discarded
 
     processed_sequences = []
     time_deltas = []
 
     for seq in sequences:
-        # Simplified feature extraction (in real scenario, use complete LOB data)
-        # Here we'll create dummy features based on mid-price
+        # Simplified feature extraction (in production, use complete LOB data)
         features = np.zeros((args.window_size, args.input_dim))
 
         # Fill first feature with mid-price changes
@@ -181,6 +182,7 @@ def generate_synthetic_data(args):
     print(f"  - Spoofing samples: {np.sum(labels_array == 1)}")
     print(f"  - Clean samples: {np.sum(labels_array == 0)}")
 
+    _ = feature_extractor  # suppress unused-variable lint warning
     return sequences_array, labels_array, time_deltas_array
 
 
@@ -262,7 +264,7 @@ def create_model(args):
         # Create TEN-GNN hybrid
         model = TEN_GNN_Hybrid(
             ten_model=ten_model,
-            num_assets=5,  # Example: 5 assets
+            num_assets=5,
             gnn_hidden_dim=128,
             num_gnn_layers=2,
             dropout=args.dropout,

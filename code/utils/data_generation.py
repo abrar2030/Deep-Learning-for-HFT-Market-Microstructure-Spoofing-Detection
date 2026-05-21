@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 class SpoofingPatternGenerator:
@@ -22,8 +22,10 @@ class SpoofingPatternGenerator:
         Args:
             seed: Random seed for reproducibility
         """
-        np.random.seed(seed)
         self.seed = seed
+        self.rng = np.random.default_rng(
+            seed
+        )  # instance RNG; avoids polluting global state
 
     def generate_layering_pattern(
         self,
@@ -61,7 +63,7 @@ class SpoofingPatternGenerator:
             else:  # Buy layers
                 price = base_price - (i * tick_size)
 
-            volume = base_volume + np.random.randint(-100, 100)  # Small variation
+            volume = base_volume + int(self.rng.integers(-100, 100))  # Small variation
 
             event = {
                 "timestamp": start_time + i * 10,  # 10ms between placements
@@ -197,7 +199,9 @@ class AdversarialBacktestFramework:
         """
         self.pattern_generator = SpoofingPatternGenerator(seed)
         self.seed = seed
-        np.random.seed(seed)
+        self.rng = np.random.default_rng(
+            seed
+        )  # instance RNG; avoids polluting global state
 
     def select_baseline(
         self,
@@ -261,7 +265,7 @@ class AdversarialBacktestFramework:
 
         # Select injection point
         if injection_point is None:
-            injection_point = np.random.randint(20, len(baseline) - 30)
+            injection_point = int(self.rng.integers(20, len(baseline) - 30))
 
         # Get context
         injection_price = baseline.iloc[injection_point]["mid_price"]
@@ -269,24 +273,24 @@ class AdversarialBacktestFramework:
 
         # Generate pattern
         if pattern_type == "layering":
-            num_layers = np.random.randint(3, 8)
-            side = np.random.choice([-1, 1])
-            duration = np.random.uniform(300, 600)
+            num_layers = int(self.rng.integers(3, 8))
+            side = int(self.rng.choice([-1, 1]))
+            duration = float(self.rng.uniform(300, 600))
 
             events = self.pattern_generator.generate_layering_pattern(
                 base_price=injection_price,
                 tick_size=tick_size,
                 num_layers=num_layers,
-                base_volume=np.random.randint(500, 2000),
+                base_volume=int(self.rng.integers(500, 2000)),
                 side=side,
                 duration_ms=duration,
             )
         elif pattern_type == "flipping":
-            duration = np.random.uniform(200, 500)
+            duration = float(self.rng.uniform(200, 500))
             events = self.pattern_generator.generate_flipping_pattern(
                 base_price=injection_price,
                 tick_size=tick_size,
-                flip_volume=np.random.randint(3000, 8000),
+                flip_volume=int(self.rng.integers(3000, 8000)),
                 duration_ms=duration,
             )
         else:
@@ -404,14 +408,14 @@ class AdversarialBacktestFramework:
         # Generate spoofing samples
         for i in range(num_spoofing):
             if i >= len(baselines):
-                baseline_idx = np.random.randint(0, len(baselines))
+                baseline_idx = int(self.rng.integers(0, len(baselines)))
             else:
                 baseline_idx = i % len(baselines)
 
             baseline = baselines[baseline_idx]
 
             # Random pattern type
-            pattern_type = np.random.choice(["layering", "flipping"])
+            pattern_type = str(self.rng.choice(["layering", "flipping"]))
 
             # Inject pattern
             modified, metadata = self.inject_spoofing_pattern(baseline, pattern_type)
@@ -444,27 +448,46 @@ class AdversarialBacktestFramework:
 class DataAugmentation:
     """
     Data augmentation techniques for LOB sequences.
+
+    All methods accept an optional ``rng`` argument (``np.random.Generator``).
+    When omitted a fresh default_rng() is created so results are still
+    reproducible when the caller manages the seed.
     """
 
     @staticmethod
-    def add_noise(sequence: np.ndarray, noise_level: float = 0.01) -> np.ndarray:
+    def add_noise(
+        sequence: np.ndarray,
+        noise_level: float = 0.01,
+        rng: Optional[np.random.Generator] = None,
+    ) -> np.ndarray:
         """Add Gaussian noise to sequence."""
-        noise = np.random.normal(0, noise_level, sequence.shape)
+        _rng = rng if rng is not None else np.random.default_rng()
+        noise = _rng.normal(0, noise_level, sequence.shape)
         return sequence + noise
 
     @staticmethod
-    def time_warp(sequence: np.ndarray, sigma: float = 0.2) -> np.ndarray:
+    def time_warp(
+        sequence: np.ndarray,
+        sigma: float = 0.2,
+        rng: Optional[np.random.Generator] = None,
+    ) -> np.ndarray:
         """Apply time warping to sequence."""
+        _rng = rng if rng is not None else np.random.default_rng()
         seq_len = len(sequence)
-        warp = np.cumsum(np.random.normal(1.0, sigma, seq_len))
+        warp = np.cumsum(_rng.normal(1.0, sigma, seq_len))
         warp = warp / warp[-1] * seq_len
         warp_indices = np.clip(warp, 0, seq_len - 1).astype(int)
         return sequence[warp_indices]
 
     @staticmethod
-    def magnitude_scale(sequence: np.ndarray, sigma: float = 0.1) -> np.ndarray:
+    def magnitude_scale(
+        sequence: np.ndarray,
+        sigma: float = 0.1,
+        rng: Optional[np.random.Generator] = None,
+    ) -> np.ndarray:
         """Scale magnitude of sequence."""
-        scale_factor = np.random.normal(1.0, sigma)
+        _rng = rng if rng is not None else np.random.default_rng()
+        scale_factor = float(_rng.normal(1.0, sigma))
         return sequence * scale_factor
 
 
