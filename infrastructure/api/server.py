@@ -12,9 +12,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-# stdlib done — now resolve local packages before third-party imports
+# stdlib done: now resolve local packages before third-party imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Local imports
+from code.deployment.inference import RealTimeDetector
+from code.models.transformer_encoder import TransformerEncoderNetwork
 
 # Third-party imports
 import redis
@@ -23,10 +27,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
-
-# Local imports
-from code.deployment.inference import RealTimeDetector
-from code.models.transformer_encoder import TransformerEncoderNetwork
 
 # Configure logging
 logging.basicConfig(
@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load model: {e}")
         raise
 
-    # Connect to Redis — port is also configurable via env
+    # Connect to Redis: port is also configurable via env
     try:
         redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
@@ -262,7 +262,9 @@ async def predict_single(event: LOBEvent):
         event_dict = event.model_dump()
 
         # process_event runs inference internally; unpack to avoid a second pass
-        alert, prediction, confidence, inference_time = state.detector.process_event(event_dict)
+        alert, prediction, confidence, inference_time = state.detector.process_event(
+            event_dict
+        )
 
         inference_latency = time.time() - start_time
         INFERENCE_LATENCY.observe(inference_latency)
@@ -310,7 +312,9 @@ async def predict_batch(request: BatchInferenceRequest):
 
     for event in request.events:
         event_dict = event.model_dump()
-        alert, prediction, confidence, inference_time = state.detector.process_event(event_dict)
+        alert, prediction, confidence, inference_time = state.detector.process_event(
+            event_dict
+        )
 
         INFERENCE_COUNTER.inc()
 

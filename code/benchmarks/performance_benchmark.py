@@ -20,6 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from models.transformer_encoder import TransformerEncoderNetwork
+from utils import console as ui
 
 
 @dataclass
@@ -196,21 +197,36 @@ class ModelBenchmark:
     @staticmethod
     def print_summary(results: List[BenchmarkResult]):
         """Print summary table"""
-        print("\n" + "=" * 70)
-        print("Benchmark Summary")
-        print("=" * 70)
-        print(
-            f"{'Batch':>6} | {'SeqLen':>6} | {'Mean(ms)':>10} | {'P95(ms)':>10} | {'Throughput':>12}"
+        best = max(
+            range(len(results)), key=lambda i: results[i].throughput_samples_per_sec
         )
-        print("-" * 70)
-
-        for r in results:
-            print(
-                f"{r.batch_size:>6} | {r.sequence_length:>6} | "
-                f"{r.mean_latency_ms:>10.2f} | {r.p95_latency_ms:>10.2f} | "
-                f"{r.throughput_samples_per_sec:>12.1f}"
-            )
-        print("=" * 70)
+        ui.section("B", "Benchmark Summary")
+        ui.table(
+            [
+                "Batch",
+                "SeqLen",
+                "Mean (ms)",
+                "P95 (ms)",
+                "P99 (ms)",
+                "Throughput (s/s)",
+                "RAM (MB)",
+            ],
+            [
+                [
+                    r.batch_size,
+                    r.sequence_length,
+                    f"{r.mean_latency_ms:.2f}",
+                    f"{r.p95_latency_ms:.2f}",
+                    f"{r.p99_latency_ms:.2f}",
+                    f"{r.throughput_samples_per_sec:.1f}",
+                    f"{r.memory_usage_mb:.0f}",
+                ]
+                for r in results
+            ],
+            highlight_row=best,
+            align="rrrrrrr",
+        )
+        ui.note("highlighted row: best throughput configuration")
 
 
 def run_production_benchmark():
@@ -233,6 +249,11 @@ def run_production_benchmark():
 
     print("=" * 70)
 
+    # Test configurations relevant for HFT (defined before the model so
+    # the positional-encoding capacity is sized to the largest sequence)
+    batch_sizes = [1, 4, 8, 16, 32]  # Real-time often uses batch_size=1
+    sequence_lengths = [50, 100, 150]
+
     # Create model
     model = TransformerEncoderNetwork(
         input_dim=47,
@@ -241,7 +262,7 @@ def run_production_benchmark():
         num_heads=8,
         d_ff=1024,
         dropout=0.1,
-        max_seq_len=100,
+        max_seq_len=max(sequence_lengths),
         num_classes=2,
     )
 
@@ -249,10 +270,6 @@ def run_production_benchmark():
     benchmark = ModelBenchmark(
         model=model, device=device, warmup_iterations=20, benchmark_iterations=200
     )
-
-    # Test configurations relevant for HFT
-    batch_sizes = [1, 4, 8, 16, 32]  # Real-time often uses batch_size=1
-    sequence_lengths = [50, 100, 150]
 
     results = benchmark.run_comprehensive_benchmark(
         batch_sizes=batch_sizes, sequence_lengths=sequence_lengths

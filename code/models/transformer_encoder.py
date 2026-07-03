@@ -37,6 +37,21 @@ class AdaptiveTemporalPositionalEncoding(nn.Module):
         # Time-delta adaptive component
         self.time_delta_proj = nn.Linear(1, d_model)
 
+    def _build_pe(self, length, device=None, dtype=None):
+        """Build a (1, length, d_model) sinusoidal encoding table."""
+        pe = torch.zeros(length, self.d_model)
+        position = torch.arange(0, length, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, self.d_model, 2).float()
+            * (-math.log(10000.0) / self.d_model)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        if device is not None:
+            pe = pe.to(device=device, dtype=dtype)
+        return pe
+
     def forward(self, x, time_deltas=None):
         """
         Args:
@@ -46,6 +61,16 @@ class AdaptiveTemporalPositionalEncoding(nn.Module):
             Positionally encoded tensor
         """
         batch_size, seq_len, _ = x.size()
+
+        # Extend the sinusoidal table on demand: max_len is an initial
+        # capacity, not a hard limit. Sequences longer than the buffer
+        # previously produced a shape-mismatch crash when time_deltas
+        # were supplied (buffer silently truncated to max_len while the
+        # time encoding kept the full length).
+        if seq_len > self.pe.size(1):
+            self.pe = self._build_pe(
+                seq_len, device=self.pe.device, dtype=self.pe.dtype
+            )
 
         # Standard positional encoding
         pos_encoding = self.pe[:, :seq_len, :]

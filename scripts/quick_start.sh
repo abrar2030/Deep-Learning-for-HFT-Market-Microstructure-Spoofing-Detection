@@ -59,9 +59,9 @@ fi
 # ── Profile selection ──────────────────────────────────────────────────────
 echo ""
 echo "Select deployment profile:"
-echo "  1) CPU only        — recommended for development/testing"
-echo "  2) GPU             — requires NVIDIA GPU + nvidia-container-toolkit"
-echo "  3) Full stack      — CPU + Kafka streaming + Prometheus/Grafana monitoring"
+echo "  1) CPU only       : recommended for development/testing"
+echo "  2) GPU            : requires NVIDIA GPU + nvidia-container-toolkit"
+echo "  3) Full stack     : CPU + Kafka streaming + Prometheus/Grafana monitoring"
 echo ""
 read -rp "Enter choice [1-3]: " profile_choice
 

@@ -263,9 +263,18 @@ class AdversarialBacktestFramework:
         """
         baseline = baseline.copy()
 
-        # Select injection point
+        # Select injection point. Margins scale down for short windows so
+        # small window_size values (e.g. in tests or quick runs) do not
+        # crash the RNG with low >= high.
         if injection_point is None:
-            injection_point = int(self.rng.integers(20, len(baseline) - 30))
+            lead = min(20, max(1, len(baseline) // 5))
+            tail = min(30, max(2, len(baseline) // 4))
+            low, high = lead, len(baseline) - tail
+            if high <= low:
+                # Degenerate very-short window: inject at the midpoint.
+                injection_point = max(1, len(baseline) // 2)
+            else:
+                injection_point = int(self.rng.integers(low, high))
 
         # Get context
         injection_price = baseline.iloc[injection_point]["mid_price"]

@@ -52,6 +52,33 @@ A production-ready framework for detecting algorithmic spoofing in HFT environme
 
 ## Quick Start
 
+### Run script (simplest)
+
+```bash
+pip install -r code/requirements.txt              # install dependencies
+bash scripts/run.sh test                           # run the unit test suite (19 tests)
+bash scripts/run.sh demo                           # tiny TEN model, 1 epoch, CPU (~2 min)
+bash scripts/run.sh train                          # full training on synthetic LOB data
+bash scripts/run.sh train --model_type TEN-GNN     # forward extra flags to train.py
+bash scripts/run.sh train-real /path/to/lob.csv    # train on real LOB data
+bash scripts/run.sh benchmark                      # inference latency benchmarks
+bash scripts/run.sh robustness                     # adversarial robustness tests
+```
+
+### Real LOB data
+
+`train-real` (and `--data_path` on `code/train/train.py`) accepts:
+
+- **CSV / Parquet** with columns `timestamp, best_bid, best_ask, bid_volume,
+ask_volume`, optional per-row `label` (1 = spoofing), and optional deeper
+  levels (`bid_price_2`, `ask_price_2`, `bid_volume_2`, `ask_volume_2`, ...).
+  Events are windowed with 50% overlap and features are engineered
+  automatically.
+- **NPZ** with pre-windowed arrays: `sequences (N, T, F)`, `labels (N,)`,
+  and optionally `time_deltas (N, T, 1)`.
+
+### Docker
+
 ```bash
 # Clone
 git clone https://github.com/quantsingularity/Deep-Learning-for-HFT-Market-Microstructure-Spoofing-Detection.git

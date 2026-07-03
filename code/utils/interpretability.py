@@ -7,7 +7,27 @@ from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+
+try:
+    import seaborn as sns
+
+    _HAS_SEABORN = True
+except Exception:  # missing seaborn, or seaborn too old for this matplotlib
+    sns = None
+    _HAS_SEABORN = False
+
+
+def _require_seaborn():
+    """Raise a clear error when a seaborn-based plot is requested."""
+    if not _HAS_SEABORN:
+        raise ImportError(
+            "seaborn (>=0.13) is required for this plot but could not be "
+            "imported. Older seaborn versions are incompatible with "
+            "matplotlib >= 3.9 (register_cmap removal). "
+            "Fix with: pip install -U 'seaborn>=0.13'"
+        )
+
+
 import torch
 import torch.nn as nn
 
@@ -280,6 +300,7 @@ class AttentionVisualizer:
             save_path: Path to save figure
             title: Plot title
         """
+        _require_seaborn()
         plt.figure(figsize=(10, 8))
         sns.heatmap(
             attention_weights,
@@ -311,6 +332,7 @@ class AttentionVisualizer:
             num_heads: Number of attention heads
             save_path: Path to save figure
         """
+        _require_seaborn()
         fig, axes = plt.subplots(2, 4, figsize=(16, 8))
         axes = axes.flatten()
 

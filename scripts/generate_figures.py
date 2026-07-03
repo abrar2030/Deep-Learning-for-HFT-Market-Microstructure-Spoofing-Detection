@@ -14,10 +14,32 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-import seaborn as sns
+
+try:
+    import seaborn as sns
+
+    _HAS_SEABORN = True
+except Exception:  # missing seaborn, or seaborn too old for this matplotlib
+    sns = None
+    _HAS_SEABORN = False
+
+
+def _require_seaborn():
+    """Raise a clear error when a seaborn-based plot is requested."""
+    if not _HAS_SEABORN:
+        raise ImportError(
+            "seaborn (>=0.13) is required for this plot but could not be "
+            "imported. Older seaborn versions are incompatible with "
+            "matplotlib >= 3.9 (register_cmap removal). "
+            "Fix with: pip install -U 'seaborn>=0.13'"
+        )
+
 
 # Set style for high-quality figures
-plt.style.use("seaborn-v0_8-paper")
+try:
+    plt.style.use("seaborn-v0_8-paper")
+except OSError:  # style removed in newer matplotlib
+    plt.style.use("default")
 plt.rcParams.update(
     {
         "font.size": 12,
@@ -144,6 +166,7 @@ def generate_fig3_hawkes_causality(output_dir: Path):
 
 
 def generate_fig4_benchmarks(output_dir: Path):
+    _require_seaborn()
     # Figure 4: Comparative Performance (F1-Score vs. Latency)
     data = {
         "Model": [
@@ -234,11 +257,7 @@ def generate_fig7_flash_crash(output_dir: Path):
     # Figure 7: Real-World Validation (2010 Flash Crash)
     rng = np.random.default_rng(0)
     time = np.linspace(14.5, 15.0, 500)
-    price = (
-        1160
-        - 50 * np.exp(-((time - 14.75) ** 2) / 0.001)
-        + rng.normal(0, 2, 500)
-    )
+    price = 1160 - 50 * np.exp(-((time - 14.75) ** 2) / 0.001) + rng.normal(0, 2, 500)
     detection_prob = np.where(
         np.abs(time - 14.75) < 0.05,
         0.95 + rng.normal(0, 0.02, 500),

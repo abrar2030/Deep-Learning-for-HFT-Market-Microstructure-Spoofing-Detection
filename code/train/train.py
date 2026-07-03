@@ -19,6 +19,7 @@ sys.path.insert(0, str(code_root))
 
 from models.hawkes_gnn import TEN_GNN_Hybrid
 from models.transformer_encoder import TransformerEncoderNetwork
+from utils import console as ui
 from utils.data_generation import AdversarialBacktestFramework
 from utils.feature_engineering import LOBFeatureExtractor
 from utils.training import LOBDataset, Trainer, evaluate_model
@@ -111,9 +112,7 @@ def generate_synthetic_data(args):
     """
     Generate synthetic LOB data for training.
     """
-    print("\n" + "=" * 70)
-    print("Generating Synthetic LOB Data")
-    print("=" * 70)
+    ui.section(1, "Data Generation")
 
     # Create synthetic baseline LOB data
     np.random.seed(args.seed)
@@ -190,9 +189,7 @@ def create_data_loaders(sequences, labels, time_deltas, args):
     """
     Create train, validation, and test data loaders.
     """
-    print("\n" + "=" * 70)
-    print("Creating Data Loaders")
-    print("=" * 70)
+    ui.section(2, "Data Loaders")
 
     # Create dataset
     dataset = LOBDataset(sequences, labels, time_deltas)
@@ -233,9 +230,7 @@ def create_model(args):
     """
     Create TEN or TEN-GNN model.
     """
-    print("\n" + "=" * 70)
-    print(f"Creating {args.model_type} Model")
-    print("=" * 70)
+    ui.section(3, f"{args.model_type} Model")
 
     if args.model_type == "TEN":
         model = TransformerEncoderNetwork(
@@ -286,9 +281,16 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    print("\n" + "=" * 70)
-    print("TEN-GNN Spoofing Detection Training")
-    print("=" * 70)
+    ui.banner(
+        "TEN-GNN Spoofing Detection",
+        "Deep Learning for HFT Market Microstructure",
+        {
+            "model": args.model_type,
+            "epochs": args.num_epochs,
+            "device": args.device,
+            "data": args.data_path or "synthetic LOB",
+        },
+    )
     print("\nConfiguration:")
     for arg in vars(args):
         print(f"  {arg}: {getattr(args, arg)}")
@@ -296,8 +298,18 @@ def main():
     # Generate or load data
     if args.data_path:
         print(f"\nLoading data from {args.data_path}")
-        # Load real data (implement based on data format)
-        raise NotImplementedError("Real data loading not implemented")
+        from utils.data_loading import load_real_data
+
+        sequences, labels, time_deltas = load_real_data(
+            args.data_path,
+            window_size=args.window_size,
+            input_dim=args.input_dim,
+        )
+        print(
+            f"Loaded real data: {sequences.shape[0]} sequences, "
+            f"{int((labels == 1).sum())} spoofing / "
+            f"{int((labels == 0).sum())} clean"
+        )
     else:
         sequences, labels, time_deltas = generate_synthetic_data(args)
 
@@ -322,18 +334,14 @@ def main():
     )
 
     # Train
-    print("\n" + "=" * 70)
-    print("Starting Training")
-    print("=" * 70)
+    ui.section(4, "Training")
 
     trainer.train(
         num_epochs=args.num_epochs, early_stopping_patience=args.early_stopping_patience
     )
 
     # Load best model and evaluate on test set
-    print("\n" + "=" * 70)
-    print("Evaluating Best Model on Test Set")
-    print("=" * 70)
+    ui.section(5, "Test Evaluation")
 
     best_model_path = os.path.join(args.checkpoint_dir, "best_model.pth")
     if os.path.exists(best_model_path):
@@ -355,11 +363,18 @@ def main():
                 indent=4,
             )
 
-        print(f"\nTest results saved to {results_path}")
+        _summary = {
+            "Model": args.model_type,
+            "Test F1": f"{test_metrics['f1']:.4f}",
+            "Test accuracy": f"{test_metrics['accuracy']:.2f}%",
+            "Checkpoint": best_model_path,
+        }
+    else:
+        _summary = {"Model": args.model_type, "Note": "no best checkpoint found"}
 
-    print("\n" + "=" * 70)
-    print("Training Complete!")
-    print("=" * 70)
+    ui.summary_panel(
+        "TRAINING COMPLETE", _summary, footer=f"Results: {args.checkpoint_dir}/"
+    )
 
 
 if __name__ == "__main__":

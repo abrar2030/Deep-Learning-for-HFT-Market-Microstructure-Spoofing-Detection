@@ -120,7 +120,9 @@ def main():
         num_classes=2,
     )
 
-    print(f"✓ Model created with {sum(p.numel() for p in model.parameters()):,} parameters")
+    print(
+        f"✓ Model created with {sum(p.numel() for p in model.parameters()):,} parameters"
+    )
 
     # Train
     print("\n" + "=" * 70)
